@@ -1,178 +1,77 @@
-// Sistema de sincronización con Firebase - Versión con prioridad a datos remotos
-// Garantiza que los datos de Firebase siempre tengan prioridad sobre los locales
+// Sistema de sincronización con Firebase - Versión simplificada y funcional
+// Prioridad absoluta a los datos de Firebase
 
 ;(() => {
-    console.log("=== INICIANDO SISTEMA DE SINCRONIZACIÓN CON PRIORIDAD A FIREBASE ===")
+    console.log("=== INICIANDO SISTEMA DE SINCRONIZACIÓN CON FIREBASE ===")
   
     // Variables globales
     let firebaseInicializado = false
     let sincronizacionEnProgreso = false
-    let ultimaSincronizacion = 0
-    let dispositivoRegistrado = false
-    let escuchaActiva = false
     let indicadorEstado
     let botonSincronizacion
     let panelDiagnostico
-    let datosLocalesLimpios = false
   
-    // Configuración de Firebase
-    const firebaseConfig = {
-      apiKey: "AIzaSyDz8D2vus826XLPgQ6P7vV_bZ16umkwjYo",
-      authDomain: "tienda-de-celulares-a72c8.firebaseapp.com",
-      projectId: "tienda-de-celulares-a72c8",
-      storageBucket: "tienda-de-celulares-a72c8.firebasestorage.app",
-      messagingSenderId: "710353154355",
-      appId: "1:710353154355:web:a6e64a5ff3cab9f6b10e46",
-      measurementId: "G-HQ70MX9BL4",
-      databaseURL: "https://tienda-de-celulares-a72c8-default-rtdb.firebaseio.com",
-    }
-  
-    // Verificar si Firebase está disponible
-    function verificarFirebase() {
-      try {
-        return typeof firebase !== "undefined" && firebase.apps && firebase.apps.length > 0
-      } catch (e) {
-        console.error("Error al verificar Firebase:", e)
-        return false
-      }
-    }
-  
-    // Inicializar Firebase
+    // Inicializar Firebase (usando la configuración ya cargada en el HTML)
     function inicializarFirebase() {
       if (firebaseInicializado) return true
   
       try {
         // Verificar si ya está inicializado
-        if (verificarFirebase()) {
+        if (typeof firebase !== "undefined" && firebase.apps && firebase.apps.length > 0) {
           console.log("Firebase ya está inicializado")
           firebaseInicializado = true
           return true
         }
   
-        // Inicializar Firebase
+        // Verificar si Firebase está disponible
         if (typeof firebase === "undefined") {
           console.error("Firebase SDK no encontrado. Asegúrate de incluirlo en tu HTML.")
           mostrarNotificacion("Firebase SDK no encontrado. Por favor inclúyelo.", "error")
           return false
         }
   
-        firebase.initializeApp(firebaseConfig)
-        console.log("Firebase inicializado correctamente")
-        firebaseInicializado = true
-  
-        // Configurar persistencia para Firestore
-        if (firebase.firestore) {
-          firebase
-            .firestore()
-            .enablePersistence({ synchronizeTabs: true })
-            .then(() => {
-              console.log("Persistencia de Firestore habilitada")
-            })
-            .catch((err) => {
-              if (err.code == "failed-precondition") {
-                console.warn("La persistencia de Firestore no pudo habilitarse porque hay múltiples pestañas abiertas")
-              } else if (err.code == "unimplemented") {
-                console.warn("El navegador actual no soporta persistencia de Firestore")
-              }
-            })
-        }
-  
-        return true
+        console.error("Firebase no está inicializado. Debe inicializarse en el HTML.")
+        mostrarNotificacion("Firebase no está inicializado correctamente.", "error")
+        return false
       } catch (error) {
-        console.error("Error al inicializar Firebase:", error)
-        mostrarNotificacion("Error al inicializar Firebase: " + error.message, "error")
+        console.error("Error al verificar Firebase:", error)
+        mostrarNotificacion("Error al verificar Firebase: " + error.message, "error")
         return false
       }
     }
   
-    // Función para obtener o generar ID de dispositivo
-    function obtenerIdDispositivo() {
-      let deviceId = localStorage.getItem("device_id")
-      if (!deviceId) {
-        deviceId = "device_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9)
-        localStorage.setItem("device_id", deviceId)
-        console.log("Nuevo ID de dispositivo generado:", deviceId)
-        dispositivoRegistrado = false
-      } else {
-        dispositivoRegistrado = true
-      }
-      return deviceId
-    }
-  
-    // Función para obtener información del usuario actual
-    function obtenerInfoUsuario() {
-      try {
-        return sessionStorage.getItem("currentUser")
-          ? JSON.parse(sessionStorage.getItem("currentUser"))
-          : { username: "unknown" }
-      } catch (e) {
-        console.error("Error al obtener información del usuario:", e)
-        return { username: "unknown" }
-      }
-    }
-  
-    // Función para registrar dispositivo en Firebase
-    async function registrarDispositivo() {
-      if (!inicializarFirebase()) return false
-  
-      const deviceId = obtenerIdDispositivo()
-  
-      try {
-        // Registrar en Realtime Database para presencia
-        const deviceStatusRef = firebase.database().ref(`devices/${deviceId}/status`)
-        const deviceInfoRef = firebase.database().ref(`devices/${deviceId}/info`)
-  
-        // Cuando nos desconectemos, actualizar el estado
-        deviceStatusRef.onDisconnect().set("offline")
-  
-        // Actualizar estado a online
-        await deviceStatusRef.set("online")
-  
-        // Guardar información del dispositivo
-        await deviceInfoRef.set({
-          lastSeen: firebase.database.ServerValue.TIMESTAMP,
-          userAgent: navigator.userAgent,
-          username: obtenerInfoUsuario().username,
-          firstSeen: dispositivoRegistrado ? undefined : firebase.database.ServerValue.TIMESTAMP,
-        })
-  
-        console.log("Dispositivo registrado correctamente")
-        return true
-      } catch (error) {
-        console.error("Error al registrar dispositivo:", error)
-        return false
-      }
-    }
-  
-    // Función para subir datos a Firebase
-    async function subirDatosAFirebase() {
+    // Función para guardar datos en Firebase
+    async function guardarDatosEnFirebase() {
       if (sincronizacionEnProgreso) {
         console.log("Ya hay una sincronización en progreso, esperando...")
+        return false
+      }
+  
+      if (!inicializarFirebase()) {
+        mostrarNotificacion("Firebase no está disponible", "error")
         return false
       }
   
       sincronizacionEnProgreso = true
       actualizarIndicadorEstado("sincronizando")
   
-      if (!inicializarFirebase()) {
-        sincronizacionEnProgreso = false
-        actualizarIndicadorEstado("error")
-        return false
-      }
-  
-      console.log("Subiendo datos a Firebase...")
-  
       try {
-        // Obtener datos locales
-        const datosLocales = JSON.parse(localStorage.getItem("tiendaCelulares") || "{}")
+        // Obtener datos del localStorage
+        const datos = JSON.parse(localStorage.getItem("tiendaCelulares") || "{}")
+  
+        if (Object.keys(datos).length === 0) {
+          console.log("No hay datos para sincronizar")
+          sincronizacionEnProgreso = false
+          actualizarIndicadorEstado("conectado")
+          return false
+        }
   
         // Añadir metadatos
         const datosConMetadatos = {
-          ...datosLocales,
+          ...datos,
           _lastModified: firebase.firestore.FieldValue.serverTimestamp(),
           _lastModifiedBy: {
             deviceId: obtenerIdDispositivo(),
-            username: obtenerInfoUsuario().username,
             timestamp: new Date().toISOString(),
           },
         }
@@ -180,14 +79,14 @@
         // Guardar en Firestore
         await firebase.firestore().collection("datos").doc("principal").set(datosConMetadatos)
   
-        console.log("Datos subidos correctamente a Firebase")
+        console.log("Datos guardados correctamente en Firebase")
         mostrarNotificacion("Datos sincronizados correctamente", "success")
-        ultimaSincronizacion = Date.now()
+  
         sincronizacionEnProgreso = false
         actualizarIndicadorEstado("conectado")
         return true
       } catch (error) {
-        console.error("Error al subir datos a Firebase:", error)
+        console.error("Error al guardar datos en Firebase:", error)
         mostrarNotificacion("Error al sincronizar: " + error.message, "error")
         sincronizacionEnProgreso = false
         actualizarIndicadorEstado("error")
@@ -195,7 +94,7 @@
       }
     }
   
-    // Función para descargar datos de Firebase (siempre completa)
+    // Función para descargar datos de Firebase
     async function descargarDatosDeFirebase() {
       if (sincronizacionEnProgreso) {
         console.log("Ya hay una sincronización en progreso, esperando...")
@@ -227,9 +126,7 @@
           localStorage.setItem("lastSyncTimestamp", Date.now().toString())
   
           mostrarNotificacion("Datos descargados de Firebase", "success")
-          datosLocalesLimpios = true
   
-          ultimaSincronizacion = Date.now()
           sincronizacionEnProgreso = false
           actualizarIndicadorEstado("conectado")
   
@@ -238,9 +135,10 @@
   
           return true
         } else {
-          console.log("No hay datos en Firebase, subiendo datos locales...")
+          console.log("No hay datos en Firebase, subiendo datos locales iniciales...")
           sincronizacionEnProgreso = false
-          return subirDatosAFirebase()
+  
+          return guardarDatosEnFirebase()
         }
       } catch (error) {
         console.error("Error al descargar datos de Firebase:", error)
@@ -264,6 +162,7 @@
       if (typeof window.actualizarTablaFacturas === "function" && document.getElementById("cuerpoTablaFacturas")) {
         window.actualizarTablaFacturas()
       }
+      window.actualizarTablaFacturas()
   
       // Actualizar cuentas por cobrar
       if (
@@ -435,34 +334,31 @@
       panelDiagnostico.style.display = "none" // Oculto por defecto
   
       panelDiagnostico.innerHTML = `
-        <h4 style="margin-top: 0; margin-bottom: 15px; color: #333;">Diagnóstico Firebase</h4>
-        <div id="firebase-status" style="margin-bottom: 10px;">
-          <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background-color: #FFC107; margin-right: 5px;"></span>
-          <span>Firebase: Verificando...</span>
-        </div>
-        <div id="dispositivo-status" style="margin-bottom: 10px;">
-          <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background-color: #FFC107; margin-right: 5px;"></span>
-          <span>Dispositivo: Verificando...</span>
-        </div>
-        <div id="datos-status" style="margin-bottom: 10px;">
-          <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background-color: #FFC107; margin-right: 5px;"></span>
-          <span>Datos locales: Verificando...</span>
-        </div>
-        <div id="ultima-sincronizacion" style="margin-bottom: 15px;">
-          Última sincronización: Nunca
-        </div>
-        <div style="display: flex; flex-wrap: wrap; gap: 5px;">
-          <button id="btn-descargar" style="flex: 1; padding: 8px; background-color: #28a745; color: white; border: none; border-radius: 3px; cursor: pointer;">Descargar Datos</button>
-          <button id="btn-limpiar" style="flex: 1; padding: 8px; background-color: #fd7e14; color: white; border: none; border-radius: 3px; cursor: pointer;">Limpiar Local</button>
-          <button id="btn-cerrar" style="flex: 1; padding: 8px; background-color: #6c757d; color: white; border: none; border-radius: 3px; cursor: pointer;">Cerrar</button>
-        </div>
-      `
+      <h4 style="margin-top: 0; margin-bottom: 15px; color: #333;">Diagnóstico Firebase</h4>
+      <div id="firebase-status" style="margin-bottom: 10px;">
+        <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background-color: #FFC107; margin-right: 5px;"></span>
+        <span>Firebase: Verificando...</span>
+      </div>
+      <div id="ultima-sincronizacion" style="margin-bottom: 15px;">
+        Última sincronización: Nunca
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+        <button id="btn-descargar" style="flex: 1; padding: 8px; background-color: #28a745; color: white; border: none; border-radius: 3px; cursor: pointer;">Descargar Datos</button>
+        <button id="btn-subir" style="flex: 1; padding: 8px; background-color: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer;">Subir Datos</button>
+        <button id="btn-limpiar" style="flex: 1; padding: 8px; background-color: #fd7e14; color: white; border: none; border-radius: 3px; cursor: pointer;">Limpiar Local</button>
+        <button id="btn-cerrar" style="flex: 1; padding: 8px; background-color: #6c757d; color: white; border: none; border-radius: 3px; cursor: pointer;">Cerrar</button>
+      </div>
+    `
   
       document.body.appendChild(panelDiagnostico)
   
       // Añadir eventos a los botones
       document.getElementById("btn-descargar").addEventListener("click", () => {
         descargarDatosDeFirebase()
+      })
+  
+      document.getElementById("btn-subir").addEventListener("click", () => {
+        guardarDatosEnFirebase()
       })
   
       document.getElementById("btn-limpiar").addEventListener("click", () => {
@@ -479,7 +375,7 @@
       try {
         localStorage.removeItem("tiendaCelulares")
         localStorage.removeItem("lastSyncTimestamp")
-        datosLocalesLimpios = false
+  
         mostrarNotificacion("Datos locales eliminados. Descargando datos de Firebase...", "success")
         setTimeout(() => {
           descargarDatosDeFirebase()
@@ -494,47 +390,33 @@
     function actualizarEstadoDiagnostico() {
       if (!panelDiagnostico) return
   
-      const firebaseDisponible = verificarFirebase()
+      const firebaseDisponible = typeof firebase !== "undefined" && firebase.apps && firebase.apps.length > 0
   
       // Actualizar estado de Firebase
       const firebaseStatus = document.getElementById("firebase-status")
       if (firebaseStatus) {
         firebaseStatus.innerHTML = `
-          <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background-color: ${firebaseDisponible ? "#4CAF50" : "#F44336"}; margin-right: 5px;"></span>
-          <span>Firebase: ${firebaseDisponible ? "Disponible" : "No disponible"}</span>
-        `
-      }
-  
-      // Actualizar estado del dispositivo
-      const dispositivoStatus = document.getElementById("dispositivo-status")
-      if (dispositivoStatus) {
-        dispositivoStatus.innerHTML = `
-          <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background-color: ${dispositivoRegistrado ? "#4CAF50" : "#FFC107"}; margin-right: 5px;"></span>
-          <span>Dispositivo: ${dispositivoRegistrado ? "Registrado" : "Nuevo"}</span>
-        `
-      }
-  
-      // Actualizar estado de datos locales
-      const datosStatus = document.getElementById("datos-status")
-      if (datosStatus) {
-        datosStatus.innerHTML = `
-          <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background-color: ${datosLocalesLimpios ? "#4CAF50" : "#FFC107"}; margin-right: 5px;"></span>
-          <span>Datos locales: ${datosLocalesLimpios ? "Sincronizados" : "Pendientes"}</span>
-        `
+        <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background-color: ${firebaseDisponible ? "#4CAF50" : "#F44336"}; margin-right: 5px;"></span>
+        <span>Firebase: ${firebaseDisponible ? "Disponible" : "No disponible"}</span>
+      `
       }
   
       // Actualizar última sincronización
       const ultimaSincronizacionElement = document.getElementById("ultima-sincronizacion")
       if (ultimaSincronizacionElement) {
+        const lastSync = localStorage.getItem("lastSyncTimestamp")
         ultimaSincronizacionElement.textContent =
-          "Última sincronización: " +
-          (ultimaSincronizacion > 0 ? new Date(ultimaSincronizacion).toLocaleString() : "Nunca")
+          "Última sincronización: " + (lastSync ? new Date(Number.parseInt(lastSync)).toLocaleString() : "Nunca")
       }
     }
   
     // Configurar escucha en tiempo real
     function configurarEscuchaEnTiempoReal() {
-      if (!inicializarFirebase() || escuchaActiva) return
+      if (!inicializarFirebase()) {
+        // Reintentar cada 3 segundos si falla
+        setTimeout(configurarEscuchaEnTiempoReal, 3000)
+        return
+      }
   
       try {
         console.log("Configurando escucha en tiempo real...")
@@ -556,19 +438,44 @@
                 }
   
                 console.log("Cambio detectado en Firebase. Actualizando datos locales...")
-                descargarDatosDeFirebase()
+  
+                // Eliminar metadatos antes de guardar localmente
+                const { _lastModified, _lastModifiedBy, ...datosLimpios } = datosFirebase
+  
+                // Guardar en localStorage
+                localStorage.setItem("tiendaCelulares", JSON.stringify(datosLimpios))
+                localStorage.setItem("lastSyncTimestamp", Date.now().toString())
+  
+                // Actualizar la UI
+                actualizarUI()
+  
+                // Mostrar notificación
+                mostrarNotificacion("Datos actualizados desde Firebase", "success")
               }
             },
             (error) => {
               console.error("Error en escucha en tiempo real:", error)
+              // Reintentar después de un error
+              setTimeout(configurarEscuchaEnTiempoReal, 3000)
             },
           )
   
-        escuchaActiva = true
         console.log("Escucha en tiempo real configurada correctamente")
       } catch (error) {
         console.error("Error al configurar escucha en tiempo real:", error)
+        // Reintentar después de un error
+        setTimeout(configurarEscuchaEnTiempoReal, 3000)
       }
+    }
+  
+    // Función para obtener ID de dispositivo
+    function obtenerIdDispositivo() {
+      let deviceId = localStorage.getItem("device_id")
+      if (!deviceId) {
+        deviceId = "device_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9)
+        localStorage.setItem("device_id", deviceId)
+      }
+      return deviceId
     }
   
     // Interceptar guardarEnLocalStorage
@@ -595,10 +502,10 @@
         // Llamar a la función original primero
         window.guardarEnLocalStorageOriginal.apply(this, arguments)
   
-        // Sincronizar con Firebase con un pequeño retraso
+        // Sincronizar con Firebase con un pequeño retraso para agrupar cambios rápidos
         clearTimeout(window._syncTimeout)
         window._syncTimeout = setTimeout(() => {
-          subirDatosAFirebase()
+          guardarDatosEnFirebase()
         }, 1000)
       }
   
@@ -607,7 +514,11 @@
   
     // Monitorear estado de conexión
     function monitorearConexion() {
-      if (!inicializarFirebase()) return
+      if (!inicializarFirebase()) {
+        // Reintentar cada 3 segundos si falla
+        setTimeout(monitorearConexion, 3000)
+        return
+      }
   
       if (firebase.database) {
         const connectedRef = firebase.database().ref(".info/connected")
@@ -616,10 +527,8 @@
             console.log("Conectado a Firebase")
             actualizarIndicadorEstado("conectado")
   
-            // Siempre descargar datos al conectarse
-            setTimeout(() => {
-              descargarDatosDeFirebase()
-            }, 2000)
+            // Descargar datos al conectarse
+            descargarDatosDeFirebase()
           } else {
             console.log("Desconectado de Firebase")
             actualizarIndicadorEstado("desconectado")
@@ -629,30 +538,27 @@
     }
   
     // Inicializar todo el sistema
-    async function inicializarSistema() {
-      console.log("Inicializando sistema de sincronización con prioridad a Firebase...")
-  
-      // Inicializar Firebase
-      inicializarFirebase()
+    function inicializarSistema() {
+      console.log("Inicializando sistema de sincronización con Firebase...")
   
       // Crear elementos de UI
       crearIndicadorEstado()
       crearBotonSincronizacion()
       crearPanelDiagnostico()
   
-      // Interceptar guardarEnLocalStorage
-      interceptarGuardarEnLocalStorage()
-  
       // Monitorear conexión
       monitorearConexion()
-  
-      // Registrar dispositivo
-      await registrarDispositivo()
   
       // Configurar escucha en tiempo real
       configurarEscuchaEnTiempoReal()
   
-      // Siempre descargar datos al inicio para asegurar que tenemos los datos más recientes
+      // Interceptar guardarEnLocalStorage
+      interceptarGuardarEnLocalStorage()
+  
+      // Actualizar estado del panel de diagnóstico
+      setInterval(actualizarEstadoDiagnostico, 5000)
+  
+      // Descargar datos inmediatamente al inicio
       setTimeout(() => {
         descargarDatosDeFirebase()
       }, 1000)
@@ -669,7 +575,7 @@
   
     // Exponer funciones útiles globalmente
     window.sincronizarConFirebase = descargarDatosDeFirebase
-    window.subirDatosAFirebase = subirDatosAFirebase
+    window.subirDatosAFirebase = guardarDatosEnFirebase
     window.descargarDatosDeFirebase = descargarDatosDeFirebase
     window.limpiarDatosLocales = limpiarDatosLocales
   })()
