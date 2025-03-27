@@ -1093,7 +1093,6 @@
    
 </script>
 
-
 <!-- IMPORTANTE: Cargar Firebase usando CDN -->
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
@@ -1118,8 +1117,8 @@ firebase.initializeApp(firebaseConfig);
 console.log("Firebase inicializado desde CDN");
 </script>
 
-<!-- Cargar el script de sincronización optimizado con prioridad a Firebase -->
-<script src="firebase-sync-prioridad-incremental.js"></script>
+<!-- Cargar el script de sincronización en tiempo real -->
+<script src="firebase-sync-tiempo-real.js"></script>
 
 <!-- Cargar el script de sincronización de usuarios -->
 <script src="firebase-login-sync.js"></script>
