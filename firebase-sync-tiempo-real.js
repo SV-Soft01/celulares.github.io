@@ -16,6 +16,17 @@
   let unsubscribeFirestore = null
   let datosLocalesBloqueados = false
 
+  // Import Firebase SDK (assuming it's available globally or via a module)
+  // If using modules:
+  // import * as firebase from 'firebase/app';
+  // import 'firebase/firestore';
+  // import 'firebase/database';
+
+  // Declare firebase if it's not already declared globally
+  if (typeof firebase === "undefined") {
+    console.warn("Firebase is not globally defined. Ensure Firebase SDK is properly included.")
+  }
+
   // Configuración de Firebase
   const firebaseConfig = {
     apiKey: "AIzaSyDz8D2vus826XLPgQ6P7vV_bZ16umkwjYo",
@@ -198,6 +209,11 @@
     sincronizacionEnProgreso = true
     actualizarIndicadorEstado("sincronizando")
 
+    // Añadir timeout para la operación
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("Timeout al descargar datos de Firebase")), 10000)
+    })
+
     if (!inicializarFirebase()) {
       sincronizacionEnProgreso = false
       actualizarIndicadorEstado("error")
@@ -207,7 +223,11 @@
     console.log("Descargando datos desde Firebase...")
 
     try {
-      const docSnap = await firebase.firestore().collection("datos").doc("principal").get()
+      // Usar Promise.race para implementar timeout
+      const docSnap = await Promise.race([
+        firebase.firestore().collection("datos").doc("principal").get(),
+        timeoutPromise,
+      ])
 
       if (docSnap.exists) {
         const datosFirebase = docSnap.data()
@@ -694,6 +714,9 @@
 
   // Función para mostrar bloqueo de UI durante sincronización inicial
   function mostrarBloqueoUI(mensaje) {
+    // Verificar si ya existe un overlay y eliminarlo
+    ocultarBloqueoUI()
+
     // Crear overlay de bloqueo
     const overlay = document.createElement("div")
     overlay.id = "firebase-sync-overlay"
@@ -735,17 +758,48 @@
     mensajeElement.style.marginTop = "20px"
     mensajeElement.style.fontFamily = "Arial, sans-serif"
 
+    // Crear botón de cancelar
+    const botonCancelar = document.createElement("button")
+    botonCancelar.textContent = "Continuar sin sincronizar"
+    botonCancelar.style.marginTop = "20px"
+    botonCancelar.style.padding = "8px 16px"
+    botonCancelar.style.backgroundColor = "#f44336"
+    botonCancelar.style.color = "white"
+    botonCancelar.style.border = "none"
+    botonCancelar.style.borderRadius = "4px"
+    botonCancelar.style.cursor = "pointer"
+    botonCancelar.addEventListener("click", () => {
+      ocultarBloqueoUI()
+      mostrarNotificacion("Sincronización cancelada. Usando datos locales.", "warning")
+    })
+
     // Añadir elementos al DOM
     overlay.appendChild(spinner)
     overlay.appendChild(mensajeElement)
+    overlay.appendChild(botonCancelar)
     document.body.appendChild(overlay)
   }
 
   // Función para ocultar bloqueo de UI
   function ocultarBloqueoUI() {
-    const overlay = document.getElementById("firebase-sync-overlay")
-    if (overlay) {
-      document.body.removeChild(overlay)
+    try {
+      const overlay = document.getElementById("firebase-sync-overlay")
+      if (overlay && overlay.parentNode) {
+        document.body.removeChild(overlay)
+      }
+    } catch (error) {
+      console.error("Error al ocultar bloqueo UI:", error)
+      // Forzar eliminación del overlay si existe
+      const overlays = document.querySelectorAll("#firebase-sync-overlay")
+      overlays.forEach((overlay) => {
+        try {
+          if (overlay && overlay.parentNode) {
+            overlay.parentNode.removeChild(overlay)
+          }
+        } catch (e) {
+          console.error("Error al forzar eliminación del overlay:", e)
+        }
+      })
     }
   }
 
@@ -755,6 +809,16 @@
 
     // Mostrar bloqueo de UI durante la inicialización
     mostrarBloqueoUI("Sincronizando con Firebase...")
+
+    // Timeout de seguridad para quitar el bloqueo después de 15 segundos
+    const timeoutSeguridad = setTimeout(() => {
+      console.warn("Timeout de seguridad activado. Quitando bloqueo de UI...")
+      ocultarBloqueoUI()
+      mostrarNotificacion(
+        "La sincronización está tardando más de lo esperado, pero puedes seguir usando la aplicación",
+        "warning",
+      )
+    }, 15000)
 
     try {
       // Inicializar Firebase
@@ -769,8 +833,14 @@
       await registrarDispositivo()
 
       // IMPORTANTE: Descargar datos de Firebase ANTES de cualquier otra operación
-      await descargarDatosDeFirebase(true)
-      console.log("Datos iniciales descargados correctamente")
+      const descargaExitosa = await descargarDatosDeFirebase(true)
+
+      if (!descargaExitosa) {
+        console.warn("No se pudieron descargar datos de Firebase. Continuando con datos locales...")
+        mostrarNotificacion("No se pudieron descargar datos de Firebase. Usando datos locales.", "warning")
+      } else {
+        console.log("Datos iniciales descargados correctamente")
+      }
 
       // Configurar escucha en tiempo real DESPUÉS de la descarga inicial
       configurarEscuchaEnTiempoReal()
@@ -784,10 +854,21 @@
       console.log("Sistema de sincronización inicializado correctamente")
     } catch (error) {
       console.error("Error al inicializar sistema:", error)
-      mostrarNotificacion("Error al inicializar sistema de sincronización", "error")
+      mostrarNotificacion(
+        "Error al inicializar sistema de sincronización. La aplicación funcionará con datos locales.",
+        "error",
+      )
     } finally {
+      // Limpiar timeout de seguridad
+      clearTimeout(timeoutSeguridad)
+
       // Ocultar bloqueo de UI
       ocultarBloqueoUI()
+
+      // Asegurar que la UI se actualice con los datos disponibles
+      setTimeout(() => {
+        actualizarUI()
+      }, 500)
     }
   }
 
@@ -804,4 +885,5 @@
   window.descargarDatosDeFirebase = descargarDatosDeFirebase
   window.limpiarDatosLocales = limpiarDatosLocales
 })()
+
 
